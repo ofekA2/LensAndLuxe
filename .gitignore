@@ -1,4 +1,6 @@
 # ignore environment files
+python/.venv/
+python/.env
 .env
 
 # ignore Python artifacts

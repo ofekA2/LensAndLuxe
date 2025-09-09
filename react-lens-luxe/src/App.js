@@ -3,7 +3,8 @@ import {
   BrowserRouter as Router,
   Routes,
   Route,
-  Outlet
+  Outlet,
+  useParams
 } from 'react-router-dom';
 import Home from './pages/Home';
 import Navbar from './components/Navbar';
@@ -28,6 +29,13 @@ function MainLayout() {
       </div>
     </>
   );
+}
+
+function CategoryPageWrapper() {
+  const { category } = useParams();
+  const capitalized =
+    category.charAt(0).toUpperCase() + category.slice(1);
+  return <CategoryPage category={capitalized} />;
 }
 
 export default function App() {
