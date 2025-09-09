@@ -254,3 +254,121 @@ code {
   color: #333;
   text-decoration: underline;
 }
+
+.item-card {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  overflow: hidden;
+  cursor: pointer;
+  width: 100%;
+  max-width: 220px;
+  text-align: center;
+}
+.items-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 2rem;
+  justify-items: center;
+}
+.item-card img {
+  width: 100%;
+  height: 240px;
+  object-fit: cover;
+  transition: transform 0.3s;
+}
+.item-card:hover img {
+  transform: scale(1.03);
+}
+
+.item-name {
+  padding: 0.75rem 0.5rem;
+  font-weight: 500;
+  color: #333;
+  background: #fafafa;
+}
+
+.category-container {
+  padding: 4rem 2rem;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  z-index: 1000;
+}
+
+.modal-content {
+  background: white;
+  border-radius: 8px;
+  max-width: 550px;
+  width: 90%;
+  padding: 1.5rem;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  text-align: center;
+}
+
+.modal-title {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.modal-description {
+  color: #555;
+  margin: 0.75rem 0;
+  line-height: 1.4;
+}
+
+.modal-content img {
+  display: block;
+  margin: 1rem auto;
+  width: auto;
+  max-width: 100%;
+  max-height: 60vh;
+  object-fit: contain;
+  border-radius: 4px;
+}
+
+.modal-link {
+  display: inline-block;
+  margin: 1.5rem auto 0 auto;
+  padding: 0.75rem 1.5rem;
+  background: #0077cc;
+  color: white;
+  text-decoration: none;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.modal-link:hover {
+  background: #005fa3;
+}
+
+.modal-meta {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #eee;
+  font-size: 0.95rem;
+}
+
+.meta-row {
+  display: flex;
+  gap: 6px;
+  margin: 4px 0;
+}
+
+.meta-label {
+  color: #666;
+  min-width: 64px;
+}
+
+.meta-value {
+  color: #111;
+}
