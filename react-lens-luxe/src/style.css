@@ -18,15 +18,14 @@ code {
 
 /*Home page style*/
 .home-container {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 100vh;
+  display: block;       
+  min-height: auto;    
+  padding-top: 1.25rem; 
   background-color: #fafafa;
 }
 
 .search-container {
-  max-width: 800px;
+  max-width: 1200px;
   margin: 0 auto;
   padding: 20px;
   text-align: center;
@@ -133,10 +132,17 @@ code {
 }
 
 /*ImageSearch component style*/
-.image-search-form {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+.hero-title {
+  text-align: center;
+  margin: 2rem 0 0.25rem;
+  font-size: 2.2rem;
+  line-height: 1.2;
+  color: #111;
+}
+.hero-sub {
+  text-align: center;
+  color: #666;
+  margin: 0 0 1.25rem;
 }
 
 .file-upload-label {
@@ -144,34 +150,44 @@ code {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  width: 320px;
-  height: 320px;
+  width: 460px;
+  height: 340px;
   border: 3px dashed #bbb;
-  border-radius: 12px;
+  border-radius: 16px;
   cursor: pointer;
-  transition: border-color 0.3s, background 0.3s;
+  transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+  background: #fff;
 }
 
 .file-upload-label:hover {
   border-color: #333;
-  background-color: #f5f5f5;
+  background-color: #fafafa;
+  box-shadow: 0 4px 18px rgba(0,0,0,0.06);
 }
 
 .file-upload-label .placeholder {
   text-align: center;
-  color: #777;
+  color: #666;
 }
 
 .file-upload-label .placeholder span {
-  font-size: 3rem;
+  font-size: 2.6rem;
+  display: block;
+  margin-bottom: 0.5rem;
 }
 
 .file-upload-label .file-name {
-  font-weight: bold;
+  font-weight: 600;
   color: #333;
   word-break: break-all;
   text-align: center;
   padding: 0 1rem;
+}
+
+.image-search-form {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .image-search-form input {
@@ -342,6 +358,25 @@ code {
 }
 
 /*Search Results styles*/
+.results-grid {
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1.25rem;
+}
+
+.results .item-card {
+  max-width: none;        
+}
+
+.results .item-image {
+  height: 220px;       
+}
+
+.results .item-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 .search-results-overlay {
   position: fixed;
   top: 0;

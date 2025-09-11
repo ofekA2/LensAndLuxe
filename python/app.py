@@ -1,5 +1,6 @@
 import os
 import io
+import json, re
 import base64
 import requests
 from flask import Flask, request, jsonify
@@ -38,7 +39,13 @@ TYPE_TO_FOLDERS = {
 
 
 def analyze_image_with_ai(image_data: bytes):
-    """Use OpenAI to analyze the uploaded image and return (clothing_type, colors)."""
+    """
+    Ask the model for compact, universal JSON. It works for all types because:
+    - 'category' picks a broad bucket we already map to folders
+    - 'colors' is up to 3 main colors
+    - 'length' is optional (mini/midi/maxi/short/long/cropped)
+    - 'keywords' is a short list of generic attributes (e.g., 'slit', 'button-front', 'strap', 'wide-leg', 'ribbed')
+    """
     try:
         if not OPENAI_API_KEY:
             raise RuntimeError("OPENAI_API_KEY is not set")
@@ -50,31 +57,33 @@ def analyze_image_with_ai(image_data: bytes):
             "Authorization": f"Bearer {OPENAI_API_KEY}",
         }
 
+        sys_text = (
+            "You are a fashion tagging assistant. Return JSON ONLY. No prose."
+            " Schema: {"
+            '  "category": one of ["dress","skirt","pants","shorts","jeans","leggings","shirt","top","hoodie","jacket","knitwear"],'
+            '  "colors": array of 1-3 lowercase color words (e.g., ["white","black","beige"]),'
+            '  "length": one of ["mini","midi","maxi","short","long","cropped", null],'
+            '  "keywords": array of 3-8 short lowercase tokens describing visible features that typically appear in product filenames;'
+            '              e.g. ["slit","strap","sleeveless","button-front","lace","pleated","floral","wide-leg","skinny","ribbed","denim","cargo"].'
+            " Only include relevant fields; use null for length if not applicable."
+            " Do not include explanations."
+        )
+
+        user_content = [
+            {
+                "type": "image_url",
+                "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"},
+            }
+        ]
+
         payload = {
             "model": "gpt-4o",
             "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": (
-                                "i want you to return 2 things in 2 different lines: first line is going to be the type "
-                                "of clothing in the image. you will return it by the subcategories ahead: for dresses, "
-                                "return either long dress or short dress. for skirts, return either long skirt or short "
-                                "skirt. for pants, return either pants or shorts. for upperwear, return either button-up "
-                                "shirt, hoodie, jacket or oversized t-shirt. second line is going to be the color of the "
-                                "clothing in the image. return 3 colors maximum if the clothing has a few colors (the main ones)."
-                            ),
-                        },
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"},
-                        },
-                    ],
-                }
+                {"role": "system", "content": sys_text},
+                {"role": "user", "content": user_content},
             ],
             "max_tokens": 300,
+            "temperature": 0.1,
         }
 
         resp = requests.post(
@@ -85,40 +94,130 @@ def analyze_image_with_ai(image_data: bytes):
             print("[openai] status:", resp.status_code)
             print("[openai] body:", resp.text[:500])
 
-        data = resp.json()
+
         if resp.status_code != 200:
-            raise RuntimeError(f"OpenAI error {resp.status_code}: {data}")
+            raise RuntimeError(f"OpenAI error {resp.status_code}: {resp.text[:500]}")
 
-        if not data.get("choices"):
-            raise RuntimeError("OpenAI returned no choices")
+        data = resp.json()
+        msg = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
 
-        content = data["choices"][0]["message"]["content"]
-        lines = [ln.strip() for ln in content.strip().split("\n") if ln.strip()]
+        m = re.search(r"\{.*\}", msg, flags=re.S)
+        json_str = m.group(0) if m else msg
 
-        clothing_type = lines[0].lower() if len(lines) > 0 else ""
-        colors = lines[1].lower() if len(lines) > 1 else ""
-        return clothing_type, colors
+        meta = json.loads(json_str)
+
+        meta["category"] = (meta.get("category") or "").lower()
+        meta["colors"] = [c.lower() for c in (meta.get("colors") or [])][:3]
+        meta["length"] = (meta.get("length") or None)
+        meta["keywords"] = [k.lower() for k in (meta.get("keywords") or [])]
+
+        return meta
 
     except Exception as e:
         print("[analyze_image_with_ai] ERROR:", e)
-        return None, None
+        return None
 
+def folders_for_category(category: str):
+    if category == "dress":
+        return ["dresses"]
+    if category == "skirt":
+        return ["skirts"]
+    if category == "pants":
+        return ["trousers", "jeans", "leggings"]
+    if category == "shorts":
+        return ["shorts"]
+    if category == "jeans":
+        return ["jeans"]
+    if category == "leggings":
+        return ["leggings"]
+    if category in ("shirt", "top"):
+        return ["shirts", "tops"]
+    if category == "hoodie":
+        return ["tops", "knitwear"]
+    if category == "jacket":
+        return ["tops", "knitwear"]
+    if category == "knitwear":
+        return ["knitwear", "tops"]
+    return TYPE_TO_FOLDERS["default"]
 
-def find_similar_clothes(clothing_type: str, colors: str):
+def find_similar_clothes(meta: dict, max_results: int = 8):
     """
-    Scan /public/images/<folder> and score by color hits in filename.
-    Returns a list of {filename, category, image_url, score}.
+    Strong color focus:
+      - If exactly ONE color predicted → only keep items with that color and
+        exclude filenames indicating other colors / multi-color patterns.
+      - If multiple colors predicted → require ≥1 allowed color hit, then score.
     """
     try:
-        folders = TYPE_TO_FOLDERS.get(clothing_type, TYPE_TO_FOLDERS["default"])
+        category = (meta.get("category") or "").lower()
+        colors   = [c.lower() for c in (meta.get("colors") or [])]
+        length   = (meta.get("length") or "").lower()
+        keywords = [k.lower() for k in (meta.get("keywords") or [])]
 
-        color_words = []
+        folders = folders_for_category(category)
+
+        COLOR_SYNS = {
+            "white":  ["white", "ivory", "cream", "ecru", "offwhite", "off-white"],
+            "black":  ["black"],
+            "red":    ["red", "burgundy", "wine"],
+            "green":  ["green", "khaki", "sage", "olive"],
+            "blue":   ["blue", "navy", "indigo", "teal", "aqua"],
+            "pink":   ["pink", "rose", "blush", "fuchsia"],
+            "beige":  ["beige", "stone", "sand", "camel", "tan"],
+            "grey":   ["grey", "gray", "charcoal"],
+            "brown":  ["brown", "chocolate", "mocha"],
+            "yellow": ["yellow", "mustard"],
+            "purple": ["purple", "lilac", "lavender", "violet"],
+            "orange": ["orange", "rust", "terracotta"],
+        }
+
+        MULTI_PATTERN = {
+            "stripe","striped","stripes","floral","flower","print","pattern",
+            "leopard","zebra","animal","check","checked","plaid","polka","dot",
+            "spots","spot","multi","multicolour","multicolor","colourblock","colorblock"
+        }
+
+        syn = {
+            "slit": ["slit", "split"],
+            "strap": ["strap", "strappy", "spaghetti"],
+            "sleeveless": ["sleeveless", "tank"],
+            "button-front": ["button", "button-front", "buttoned"],
+            "lace": ["lace", "lacy", "broderie", "eyelet"],
+            "pleated": ["pleat", "pleated"],
+            "ribbed": ["rib", "ribbed"],
+            "denim": ["denim", "jean", "jeans"],
+            "cargo": ["cargo", "utility"],
+            "wide-leg": ["wide", "wide-leg", "palazzo", "flare", "flared"],
+            "skinny": ["skinny", "slim"],
+            "straight": ["straight"],
+            "bodycon": ["bodycon", "fitted"],
+            "wrap": ["wrap", "wrap-front", "wrapover", "surplice"],
+        }
+        length_map = {
+            "maxi": ["maxi", "long"],
+            "midi": ["midi"],
+            "mini": ["mini", "short"],
+            "short": ["short", "mini"],
+            "long":  ["long", "maxi"],
+            "cropped": ["crop", "cropped"],
+        }
+        length_terms = length_map.get(length, [])
+
+        allowed_color_terms = set()
+        for c in colors:
+            allowed_color_terms.update(COLOR_SYNS.get(c, [c]))
+
+        disallowed_color_terms = set()
         if colors:
-            color_words = (
-                colors.replace(",", " ").replace("and", " ").lower().split()
-            )
+            for name, syns in COLOR_SYNS.items():
+                if name not in colors:
+                    disallowed_color_terms.update(syns)
 
-        candidates = []
+        def tokens(s: str):
+            import re
+            t = re.split(r"[\s_\-\(\),\.]+", s.lower())
+            return [w for w in t if w]
+
+        scored = []
         for folder in folders:
             abs_dir = os.path.join(PUBLIC_IMAGES, folder)
             if not os.path.isdir(abs_dir):
@@ -128,24 +227,47 @@ def find_similar_clothes(clothing_type: str, colors: str):
                 if not fname.lower().endswith((".jpg", ".jpeg", ".png", ".gif")):
                     continue
 
+                toks = tokens(fname)
+
+                allow_hits = sum(1 for v in allowed_color_terms if v in toks) if allowed_color_terms else 0
+                disallow_hits = sum(1 for v in disallowed_color_terms if v in toks) if disallowed_color_terms else 0
+                has_multi_pattern = any(p in toks for p in MULTI_PATTERN)
+
+                if len(colors) == 1:
+                    if allow_hits == 0:
+                        continue
+                    if disallow_hits > 0:
+                        continue
+                    if has_multi_pattern:
+                        continue
+
+                elif len(colors) > 1 and allowed_color_terms and allow_hits == 0:
+                    continue
+
                 score = 0
-                lower = fname.lower()
-                for c in color_words:
-                    c = c.strip()
-                    if len(c) > 2 and c in lower:
-                        score += 1
+                score += allow_hits * 4  
+                score -= disallow_hits * 3 
+                for t in length_terms:
+                    if t in toks:
+                        score += 2
 
-                candidates.append(
-                    {
-                        "filename": fname,
-                        "category": folder,
-                        "image_url": f"http://localhost:3000/images/{folder}/{fname}",
-                        "score": score,
-                    }
-                )
+                for kw in keywords:
+                    variants = syn.get(kw, [kw])
+                    if any(v in toks for v in variants):
+                        score += 2
 
-        candidates.sort(key=lambda x: x["score"], reverse=True)
-        return candidates[:12]
+                if category and category in toks:
+                    score += 1
+
+                scored.append({
+                    "filename": fname,
+                    "category": folder,
+                    "image_url": f"http://localhost:3000/images/{folder}/{fname}",
+                    "score": score,
+                })
+
+        scored.sort(key=lambda x: x["score"], reverse=True)
+        return scored[:max_results]
 
     except Exception as e:
         print("[find_similar_clothes] ERROR:", e)
@@ -154,30 +276,30 @@ def find_similar_clothes(clothing_type: str, colors: str):
 
 @app.post("/api/search")
 def search_clothes():
-    """Upload image and get similar clothes (no Mongo/GridFS)."""
+
     try:
         if "image" not in request.files:
             return jsonify({"error": 'No image uploaded (field name must be "image")'}), 400
 
         image_data = request.files["image"].read()
 
-        clothing_type, colors = analyze_image_with_ai(image_data)
-        if not clothing_type:
-            return jsonify({"error": "Could not analyze image via OpenAI"}), 502
+        meta = analyze_image_with_ai(image_data)
+        if not meta:
+            return jsonify({"error": "Could not analyze image"}), 502
 
-        similar_items = find_similar_clothes(clothing_type, colors)
+        similar_items = find_similar_clothes(meta)
 
-        return jsonify(
-            {
-                "clothing_type": clothing_type,
-                "colors": colors,
-                "similar_items": similar_items,
-                "total_found": len(similar_items),
-            }
-        )
+        return jsonify({
+            "clothing_type": meta.get("category"),
+            "colors": ", ".join(meta.get("colors") or []),
+            "similar_items": similar_items,
+            "total_found": len(similar_items),
+        })
+
     except Exception as e:
         print("[/api/search] ERROR:", e)
         return jsonify({"error": str(e)}), 500
+
 
 @app.get("/api/health")
 def health():

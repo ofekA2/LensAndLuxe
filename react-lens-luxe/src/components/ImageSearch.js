@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState } from "react";
+import ItemCard from "./ItemCard";
 
 function ImageSearch() {
   const [file, setFile] = useState(null);
@@ -21,10 +22,10 @@ function ImageSearch() {
 
     try {
       const formData = new FormData();
-      formData.append('image', file);
+      formData.append("image", file);
 
-      const response = await fetch('http://localhost:5000/api/search', {
-        method: 'POST',
+      const response = await fetch("http://localhost:5000/api/search", {
+        method: "POST",
         body: formData,
       });
 
@@ -32,31 +33,54 @@ function ImageSearch() {
         const data = await response.json();
         setResults(data);
       } else {
-        setError('Search failed. Please try again.');
+        const text = await response.text().catch(() => "");
+        setError(`Search failed. ${text || ""}`.trim());
       }
     } catch (err) {
-      setError('Connection error. Make sure the server is running.');
+      setError("Connection error. Make sure the server is running.");
     } finally {
       setLoading(false);
     }
   };
 
+  const normalizeForItemCard = (resItem, i) => {
+    const noExt = resItem.filename.replace(/\.(jpe?g|png|gif)$/i, "");
+    return {
+      id: `sr-${i}`,
+      name: noExt,          
+      image: resItem.image_url,
+      description: "",
+      link: ""               
+    };
+  };
+
   return (
     <div className="search-container">
-      <h1>Lens & Luxe - Find Similar Clothes</h1>
-      
-      <form onSubmit={handleSubmit} className="search-form">
-        <div className="file-input-container">
-          <input
-            type="file"
-            accept="image/*"
-            onChange={handleFileChange}
-            required
-          />
-        </div>
-        
+      <h1 className="hero-title">Find Your Look from a Photo</h1>
+      <p className="hero-sub">Upload an inspo pic. We’ll find similar pieces.</p>
+
+      <form onSubmit={handleSubmit} className="image-search-form">
+        <label className="file-upload-label" htmlFor="file-input">
+          {file ? (
+            <div className="file-name">{file.name}</div>
+          ) : (
+            <div className="placeholder">
+              <span>📷</span>
+              <div>Drop an image here or click to upload</div>
+              <small>JPG/PNG up to ~10MB</small>
+            </div>
+          )}
+        </label>
+        <input
+          id="file-input"
+          type="file"
+          accept="image/*"
+          onChange={handleFileChange}
+          required
+        />
+
         <button type="submit" disabled={!file || loading}>
-          {loading ? 'Searching...' : 'Search for Similar Clothes'}
+          {loading ? "Searching..." : "Search for Similar Clothes"}
         </button>
       </form>
 
@@ -68,22 +92,11 @@ function ImageSearch() {
 
       {results && (
         <div className="results">
-          <h2>Analysis Results:</h2>
-          <p><strong>Clothing Type:</strong> {results.clothing_type}</p>
-          <p><strong>Colors:</strong> {results.colors}</p>
-          
-          <h3>Similar Items Found ({results.total_found}):</h3>
-          <div className="items-grid">
-            {results.similar_items.map((item, index) => (
-              <div key={index} className="item">
-                 <img
-                    src={item.image_url}
-                    alt={item.filename}
-                    style={{ width: '200px', height: '200px', objectFit: 'cover' }}
-                  />
-                <p>{item.filename}</p>
-                <p>Match Score: {item.score}</p>
-              </div>
+          <h3>Similar items found ({results.total_found})</h3>
+
+          <div className="items-grid results-grid">
+            {results.similar_items.map((ri, idx) => (
+              <ItemCard key={idx} item={normalizeForItemCard(ri, idx)} />
             ))}
           </div>
         </div>
