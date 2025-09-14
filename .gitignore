@@ -1,0 +1,15 @@
+# ignore environment files
+python/.venv/
+python/.env
+.env
+
+# ignore Python artifacts
+__pycache__/
+*.py[cod]
+
+# ignore React dependencies
+node_modules/
+
+# ignore IDE configs
+.vscode/
+.idea/
