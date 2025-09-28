@@ -16,7 +16,7 @@ load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 DEBUG_LOG_OPENAI = True
 
-# session config
+
 app.secret_key = os.getenv('SECRET_KEY', 'my-secret-key-for-final-project')
 app.config['SESSION_COOKIE_SECURE'] = False
 app.config['SESSION_COOKIE_HTTPONLY'] = True
@@ -25,22 +25,35 @@ app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)
 
 CORS(app, supports_credentials=True, origins=['http://localhost:3000'])
 
-# database connection without specifying database initially
+load_dotenv()
+DB_HOST = os.getenv("DB_HOST", "localhost")
+DB_PORT = int(os.getenv("DB_PORT", "3306"))
+DB_USER = os.getenv("DB_USER") or "root"
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+DB_NAME = os.getenv("DB_NAME", "lens_luxe")
+
 initial_db_config = {
-    'host': 'localhost',
-    'user': os.getenv('DB_USER', 'root'),
-    'password': os.getenv('DB_PASSWORD', ''),
-    'charset': 'utf8mb4'
+    "host": DB_HOST,
+    "port": DB_PORT,
+    "user": DB_USER,
+    "password": DB_PASSWORD,
+    "charset": "utf8mb4",
 }
 
-# database config with lens_luxe database
+
 db_config = {
-    'host': 'localhost',
-    'user': os.getenv('DB_USER', 'root'),
-    'password': os.getenv('DB_PASSWORD', ''),
-    'database': 'lens_luxe',
-    'charset': 'utf8mb4'
+    **initial_db_config,
+    "database": DB_NAME,
 }
+
+def connect_to_db(use_database=True):
+    try:
+        config = db_config if use_database else initial_db_config
+        conn = mysql.connector.connect(**config)
+        return conn
+    except mysql.connector.Error as err:
+        print("[DB] connection error:", err) 
+        return None
 
 PUBLIC_ROOT = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "react-lens-luxe", "public")
@@ -64,15 +77,6 @@ TYPE_TO_FOLDERS = {
         "tops", "shorts", "shirts", "knitwear"
     ],
 }
-
-def connect_to_db(use_database=True):
-    try:
-        config = db_config if use_database else initial_db_config
-        conn = mysql.connector.connect(**config)
-        return conn
-    except mysql.connector.Error as err:
-        print(f"DB connection error: {err}")
-        return None
 
 def setup_database():
     # first connect without specifying database
@@ -581,11 +585,25 @@ def search_for_clothes():
 
 @app.route("/api/health", methods=['GET'])
 def health_check():
+    conn = connect_to_db()
+    ok = False
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT 1")
+            cur.fetchone()
+            ok = True
+        except Exception as e:
+            print("[DB] probe error:", e)
+        finally:
+            try: cur.close()
+            except: pass
+            conn.close()
     return jsonify({
         "status": "running",
         "images_folder_exists": os.path.isdir(PUBLIC_IMAGES),
         "openai_configured": bool(OPENAI_API_KEY),
-        "database_accessible": bool(connect_to_db())
+        "database_accessible": ok
     })
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import ItemCard from "./ItemCard";
+import { api } from "../api";
 
 function ImageSearch() {
   const [file, setFile] = useState(null);
@@ -24,24 +25,19 @@ function ImageSearch() {
       const formData = new FormData();
       formData.append("image", file);
 
-      const response = await fetch("http://localhost:5001/api/search", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setResults(data);
-      } else {
-        const text = await response.text().catch(() => "");
-        setError(`Search failed. ${text || ""}`.trim());
-      }
+      const { data } = await api.post("/api/search", formData);
+      setResults(data);
     } catch (err) {
-      setError("Connection error. Make sure the server is running.");
+      const msg =
+        err?.response?.data?.error ||
+        err?.response?.data?.message ||
+        err?.message ||
+        "Connection error. Make sure the server is running.";
+      setError(`Search failed. ${msg}`);
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   const normalizeForItemCard = (resItem, i) => {
     const noExt = resItem.filename.replace(/\.(jpe?g|png|gif)$/i, "");

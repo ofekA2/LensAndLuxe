@@ -14,8 +14,9 @@ import Login from './pages/Login';
 import Signup from './pages/Signup';
 import Profile from './pages/Profile';
 import CategoryPage from './pages/CategoryPage';
+import { api } from "./api";
 
-// context for managing user login state
+
 const AuthContext = createContext();
 
 export const useAuth = () => {
@@ -31,28 +32,17 @@ function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // check if user is already logged in when app starts
+
   useEffect(() => {
     checkIfLoggedIn();
   }, []);
 
   const checkIfLoggedIn = async () => {
     try {
-      const response = await fetch('http://localhost:5001/api/check-auth', {
-        method: 'GET',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        if (data.authenticated) {
-          setUser(data.user);
-        }
-      }
-    } catch (error) {
+      const { data } = await api.get('/api/check-auth');
+      if (data?.authenticated) setUser(data.user);
+    }
+    catch (error) {
       console.error('Auth check failed:', error);
     } finally {
       setLoading(false);
@@ -62,24 +52,16 @@ function AuthProvider({ children }) {
   const login = async (email, password) => {
     try {
       setError(null);
-      const response = await fetch('http://localhost:5001/api/login', {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email, password }),
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        setUser(data.user);
-        return { success: true };
-      } else {
-        setError(data.error || 'Login failed');
-        return { success: false, error: data.error };
-      }
+      try {
+          const { data } = await api.post('/api/login', { email, password });
+          setUser(data.user);
+          return { success: true };
+        } 
+        catch (err) {
+          const msg = err?.response?.data?.error || 'Login failed';
+          setError(msg);
+          return { success: false, error: msg };
+        }
     } catch (error) {
       const errorMsg = 'Network error. Please try again.';
       setError(errorMsg);
@@ -90,23 +72,15 @@ function AuthProvider({ children }) {
   const signup = async (userData) => {
     try {
       setError(null);
-      const response = await fetch('http://localhost:5001/api/signup', {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(userData),
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        setUser(data.user);
-        return { success: true };
-      } else {
-        setError(data.error || 'Signup failed');
-        return { success: false, error: data.error };
+      try {
+         const { data } = await api.post('/api/signup', userData);
+         setUser(data.user);        
+         return { success: true };
+      } 
+      catch (err) {
+         const msg = err?.response?.data?.error || 'Signup failed';
+         setError(msg);
+         return { success: false, error: msg };
       }
     } catch (error) {
       const errorMsg = 'Network error. Please try again.';
@@ -117,13 +91,12 @@ function AuthProvider({ children }) {
 
   const logout = async () => {
     try {
-      await fetch('http://localhost:5001/api/logout', {
-        method: 'POST',
-        credentials: 'include',
-      });
-    } catch (error) {
+      await api.post('/api/logout');
+    } 
+    catch (error) {
       console.error('Logout error:', error);
-    } finally {
+    } 
+    finally {
       setUser(null);
     }
   };
@@ -146,7 +119,7 @@ function AuthProvider({ children }) {
   );
 }
 
-// protect routes that need login
+
 function ProtectedRoute({ children }) {
   const { isAuthenticated, loading } = useAuth();
   const location = useLocation();
@@ -165,20 +138,20 @@ function ProtectedRoute({ children }) {
     );
   }
 
-  if (!isAuthenticated) {
-    // redirect to login but remember where they were trying to go
+  if (!isAuthenticated) 
+  {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
   return children;
 }
 
-// layout for login/signup pages
+
 function AuthLayout() {
   const { isAuthenticated } = useAuth();
   const location = useLocation();
 
-  // if already logged in, redirect to home
+  
   if (isAuthenticated) {
     return <Navigate to="/" replace />;
   }
@@ -190,7 +163,7 @@ function AuthLayout() {
   );
 }
 
-// layout for main app with navbar
+
 function MainLayout() {
   return (
     <>
@@ -213,13 +186,11 @@ export default function App() {
     <Router>
       <AuthProvider>
         <Routes>
-          {/* auth routes - login/signup */}
           <Route element={<AuthLayout />}>
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
           </Route>
 
-          {/* main app routes - need login */}
           <Route element={
             <ProtectedRoute>
               <MainLayout />
@@ -230,7 +201,6 @@ export default function App() {
             <Route path="/category/:category" element={<CategoryPageWrapper />} />
           </Route>
 
-          {/* everything else goes to login */}
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
       </AuthProvider>
